@@ -247,9 +247,9 @@
 /* =========================================================
    SUPABASE CONFIG — ganti dengan punya lo sendiri
    ========================================================= */
-const SUPABASE_URL = "https://xxxxxxxxxxxxx.supabase.co";
-const SUPABASE_ANON_KEY = "isi-anon-key-punya-lo-disini";
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const SUPABASE_URL = "https://qpsqlegevuxpmrtnmdnr.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_l-k8KfdKjWpGnpVnJ7Wf3w_o4M-wBOl";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 /* =========================================================
    CHECKLIST STRUCTURE (fallback kalau tabel master kosong)
@@ -273,8 +273,8 @@ async function init(){
 }
 
 async function loadMasterData(){
-  const { data: trucks } = await supabase.from('trucks').select('*').eq('aktif', true).order('plat_nomor');
-  const { data: drivers } = await supabase.from('drivers').select('*').eq('aktif', true).order('nama');
+  const { data: trucks } = await sb.from('trucks').select('*').eq('aktif', true).order('plat_nomor');
+  const { data: drivers } = await sb.from('drivers').select('*').eq('aktif', true).order('nama');
   state.trucks = trucks || [];
   state.drivers = drivers || [];
 
@@ -409,8 +409,8 @@ function setMode(mode){
 
 async function loadOpenTrips(){
   // trip terbuka = submission tipe keberangkatan yang belum ada pasangan kepulangan
-  const { data: berangkatList } = await supabase.from('p2h_submissions').select('*').eq('tipe', 'keberangkatan').order('created_at', { ascending: false });
-  const { data: pulangList } = await supabase.from('p2h_submissions').select('trip_ref_id').eq('tipe', 'kepulangan');
+  const { data: berangkatList } = await sb.from('p2h_submissions').select('*').eq('tipe', 'keberangkatan').order('created_at', { ascending: false });
+  const { data: pulangList } = await sb.from('p2h_submissions').select('trip_ref_id').eq('tipe', 'kepulangan');
   const closedIds = new Set((pulangList || []).map(p => p.trip_ref_id));
   const open = (berangkatList || []).filter(b => !closedIds.has(b.id));
 
@@ -491,17 +491,17 @@ async function submitForm(){
     const photoUrls = [];
     for(const p of state.photos){
       const path = `submission-${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
-      const { data, error } = await supabase.storage.from('p2h-photos').upload(path, p.file);
-      if(!error){ photoUrls.push(supabase.storage.from('p2h-photos').getPublicUrl(path).data.publicUrl); }
+      const { data, error } = await sb.storage.from('p2h-photos').upload(path, p.file);
+      if(!error){ photoUrls.push(sb.storage.from('p2h-photos').getPublicUrl(path).data.publicUrl); }
     }
     let bensinPhotoUrl = null;
     if(state.bensinPhotoFile){
       const path = `bensin-${Date.now()}.jpg`;
-      const { data, error } = await supabase.storage.from('p2h-photos').upload(path, state.bensinPhotoFile);
-      if(!error){ bensinPhotoUrl = supabase.storage.from('p2h-photos').getPublicUrl(path).data.publicUrl; }
+      const { data, error } = await sb.storage.from('p2h-photos').upload(path, state.bensinPhotoFile);
+      if(!error){ bensinPhotoUrl = sb.storage.from('p2h-photos').getPublicUrl(path).data.publicUrl; }
     }
 
-    const { data: submission, error: subErr } = await supabase.from('p2h_submissions').insert({
+    const { data: submission, error: subErr } = await sb.from('p2h_submissions').insert({
       truck_id: truckVal,
       driver_id: driverVal,
       tipe: state.mode === 'berangkat' ? 'keberangkatan' : 'kepulangan',
@@ -528,7 +528,7 @@ async function submitForm(){
         keterangan: state.notes[key] || null
       });
     });
-    const { error: itemErr } = await supabase.from('p2h_submission_items').insert(itemRows);
+    const { error: itemErr } = await sb.from('p2h_submission_items').insert(itemRows);
     if(itemErr) throw itemErr;
 
     alert('P2H berhasil disimpan.');
@@ -561,7 +561,7 @@ function resetForm(){
 async function loadRiwayat(){
   const truckFilter = document.getElementById('filterTruck').value;
   const tipeFilter = document.getElementById('filterTipe').value;
-  let query = supabase.from('p2h_submissions').select('*').order('created_at', { ascending: false }).limit(50);
+  let query = sb.from('p2h_submissions').select('*').order('created_at', { ascending: false }).limit(50);
   if(truckFilter) query = query.eq('truck_id', truckFilter);
   if(tipeFilter) query = query.eq('tipe', tipeFilter);
   const { data, error } = await query;
@@ -591,8 +591,8 @@ document.getElementById('filterTipe')?.addEventListener('change', loadRiwayat);
 /* ---------- DASHBOARD ---------- */
 async function loadDashboard(){
   // status truck: cek trip terbuka per truck
-  const { data: berangkatList } = await supabase.from('p2h_submissions').select('*').eq('tipe', 'keberangkatan');
-  const { data: pulangList } = await supabase.from('p2h_submissions').select('trip_ref_id').eq('tipe', 'kepulangan');
+  const { data: berangkatList } = await sb.from('p2h_submissions').select('*').eq('tipe', 'keberangkatan');
+  const { data: pulangList } = await sb.from('p2h_submissions').select('trip_ref_id').eq('tipe', 'kepulangan');
   const closedIds = new Set((pulangList || []).map(p => p.trip_ref_id));
   const openByTruck = {};
   (berangkatList || []).forEach(b => { if(!closedIds.has(b.id)) openByTruck[b.truck_id] = b; });
@@ -611,7 +611,7 @@ async function loadDashboard(){
   }).join('') || `<div class="empty-state">Belum ada data truck.</div>`;
 
   // frekuensi item ditambahkan ke master checklist (dari tabel log, lihat panduan Supabase)
-  const { data: logs } = await supabase.from('p2h_checklist_log').select('*').eq('aksi', 'tambah').order('created_at', { ascending: false }).limit(10);
+  const { data: logs } = await sb.from('p2h_checklist_log').select('*').eq('aksi', 'tambah').order('created_at', { ascending: false }).limit(10);
   const freqEl = document.getElementById('dashItemFreq');
   if(!logs || logs.length === 0){
     freqEl.innerHTML = `<div class="empty-state">Belum ada riwayat penambahan item checklist.</div>`;
