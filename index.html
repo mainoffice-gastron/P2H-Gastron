@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P2H Gastron</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --red:#DC2626; --red-dark:#B91C1C; --red-bg:#FEF2F2;
+    --green:#16A34A; --green-bg:#F0FDF4;
+    --amber:#D97706; --amber-bg:#FFFBEB;
+    --border:#E5E7EB; --border-strong:#D1D5DB;
+    --text:#111827; --text-secondary:#6B7280; --text-muted:#9CA3AF;
+    --surface:#FFFFFF; --page-bg:#F3F4F6; --radius:8px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--page-bg);color:var(--text);}
+  .app{max-width:640px;margin:0 auto;min-height:100vh;background:var(--page-bg);padding-bottom:20px;}
+  header{background:#1F2937;color:#fff;padding:16px 20px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:10;}
+  header .icon{width:32px;height:32px;border-radius:8px;background:var(--red);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0;}
+  header h1{font-size:15px;margin:0;font-weight:600;}
+  header p{font-size:12px;margin:0;color:#D1D5DB;}
+  .navbar{background:#1F2937;display:flex;gap:4px;padding:0 16px 12px;position:sticky;top:64px;z-index:9;}
+  .navbar button{padding:7px 14px;border:none;background:transparent;color:#9CA3AF;font-size:13px;font-weight:500;border-radius:6px;cursor:pointer;}
+  .navbar button.active{background:rgba(255,255,255,0.1);color:#fff;}
+  .page{display:none;}
+  .page.active{display:block;}
+
+  .toggle-wrap{padding:16px 16px 0;}
+  .toggle{display:flex;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:4px;gap:4px;}
+  .toggle button{flex:1;padding:10px;border:none;background:transparent;border-radius:6px;font-size:14px;font-weight:600;color:var(--text-secondary);cursor:pointer;transition:all .15s;}
+  .toggle button.active{background:var(--red);color:#fff;}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;margin:16px;padding:16px;}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted);margin:0 0 12px;font-weight:600;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .field label{display:block;font-size:12px;color:var(--text-secondary);margin-bottom:4px;font-weight:500;}
+  .field select, .field input, .field textarea{width:100%;padding:9px 10px;border:1px solid var(--border-strong);border-radius:6px;font-size:14px;background:#fff;color:var(--text);font-family:inherit;}
+  .field select:focus, .field input:focus{outline:none;border-color:var(--red);box-shadow:0 0 0 3px rgba(220,38,38,0.1);}
+  .field.full{grid-column:1/-1;}
+
+  .trip-link{grid-column:1/-1;background:var(--red-bg);border:1px solid #FCA5A5;border-radius:8px;padding:10px 12px;font-size:12px;color:var(--red-dark);display:none;}
+  .trip-link.show{display:block;}
+  .trip-link b{font-weight:700;}
+  .readonly-field{background:#F3F4F6 !important;color:var(--text-secondary) !important;}
+
+  .cat-title{font-size:14px;font-weight:600;color:var(--text);margin:20px 0 8px;display:flex;align-items:center;gap:8px;}
+  .cat-title:first-child{margin-top:0;}
+  .cat-num{width:20px;height:20px;background:var(--red-bg);color:var(--red-dark);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;}
+
+  .item{padding:12px 0;border-bottom:1px solid var(--border);}
+  .item:last-child{border-bottom:none;}
+  .item-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;}
+  .item-name{font-size:14px;font-weight:500;flex:1;}
+  .status-btns{display:flex;gap:4px;flex-shrink:0;}
+  .status-btn{padding:5px 9px;font-size:11px;font-weight:600;border-radius:6px;border:1px solid var(--border-strong);background:#fff;color:var(--text-secondary);cursor:pointer;white-space:nowrap;transition:all .1s;}
+  .status-btn.aman.active{background:var(--green-bg);border-color:var(--green);color:var(--green);}
+  .status-btn.kurang.active{background:var(--amber-bg);border-color:var(--amber);color:var(--amber);}
+  .status-btn.ganti.active{background:var(--red-bg);border-color:var(--red);color:var(--red-dark);}
+  .item-row2{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;}
+  .item-row2 .label-small{font-size:11px;color:var(--text-muted);flex-shrink:0;}
+  .hasil-btns{display:flex;gap:4px;}
+  .hasil-btn{padding:5px 12px;font-size:11px;font-weight:600;border-radius:6px;border:1px solid var(--border-strong);background:#fff;color:var(--text-secondary);cursor:pointer;}
+  .hasil-btn.layak.active{background:var(--green-bg);border-color:var(--green);color:var(--green);}
+  .hasil-btn.tidak.active{background:var(--red-bg);border-color:var(--red);color:var(--red-dark);}
+  .item-note{width:100%;padding:7px 9px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:#FAFAFA;color:var(--text);}
+  .item-note::placeholder{color:var(--text-muted);}
+
+  .upload-box{border:1.5px dashed var(--border-strong);border-radius:10px;padding:20px;text-align:center;cursor:pointer;background:#FAFAFA;}
+  .upload-box:hover{border-color:var(--red);background:var(--red-bg);}
+  .upload-box .up-icon{font-size:22px;margin-bottom:6px;}
+  .upload-box .up-text{font-size:13px;color:var(--text-secondary);font-weight:500;}
+  .upload-box .up-sub{font-size:11px;color:var(--text-muted);margin-top:2px;}
+  .upload-box-sm{border:1.5px dashed var(--border-strong);border-radius:6px;padding:9px 10px;text-align:center;cursor:pointer;background:#FAFAFA;font-size:12px;color:var(--text-secondary);font-weight:500;}
+  .upload-box-sm:hover{border-color:var(--red);background:var(--red-bg);}
+  .upload-box-sm.has-photo{color:var(--green);border-color:var(--green);background:var(--green-bg);}
+  .photo-preview{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px;}
+  .photo-thumb{position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--border);}
+  .photo-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+  .photo-thumb .remove-btn{position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,0.6);color:#fff;border:none;font-size:12px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+
+  .footer-bar{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--border);padding:12px 16px;display:flex;gap:10px;}
+  .btn{flex:1;padding:13px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--border-strong);background:#fff;color:var(--text);}
+  .btn.primary{flex:2;background:var(--red);border-color:var(--red);color:#fff;}
+  .btn.primary:active{background:var(--red-dark);}
+  .btn.primary:disabled{opacity:0.5;cursor:not-allowed;}
+  .progress-note{font-size:12px;color:var(--text-muted);text-align:center;padding:0 16px 12px;}
+
+  select{-webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236B7280' stroke-width='2'%3e%3cpath d='M6 9l6 6 6-6'/%3e%3c/svg%3e");background-repeat:no-repeat;background-position:right 8px center;background-size:16px;padding-right:28px;}
+
+  /* Riwayat */
+  .filter-row{display:flex;gap:8px;margin:0 16px 12px;}
+  .filter-row select, .filter-row input{flex:1;padding:8px 10px;border:1px solid var(--border-strong);border-radius:6px;font-size:13px;background:#fff;}
+  .trip-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin:0 16px 10px;padding:12px 14px;}
+  .trip-item-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  .trip-item-top b{font-size:14px;}
+  .badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;}
+  .badge.open{background:var(--amber-bg);color:var(--amber);}
+  .badge.closed{background:var(--green-bg);color:var(--green);}
+  .trip-item-sub{font-size:12px;color:var(--text-secondary);}
+  .empty-state{text-align:center;padding:40px 20px;color:var(--text-muted);font-size:13px;}
+
+  /* Dashboard */
+  .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem 1.25rem;margin:16px;}
+  .stat-card p.label{font-size:13px;font-weight:600;margin:0 0 10px;}
+  .truck-status-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid var(--border);}
+  .truck-status-row:last-child{border-bottom:none;}
+  .bar-row{margin-bottom:10px;}
+  .bar-row .bar-label{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;}
+  .bar-track{height:6px;background:#F3F4F6;border-radius:4px;}
+  .bar-fill{height:6px;background:var(--red);border-radius:4px;}
+
+  .loading-msg{text-align:center;padding:30px;color:var(--text-muted);font-size:13px;}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="icon">GT</div>
+    <div>
+      <h1>Formulir P2H</h1>
+      <p>Pemeriksaan dan perawatan harian truck</p>
+    </div>
+  </header>
+
+  <div class="navbar">
+    <button class="nav-btn active" data-page="form" onclick="showPage('form')">Form P2H</button>
+    <button class="nav-btn" data-page="riwayat" onclick="showPage('riwayat')">Riwayat trip</button>
+    <button class="nav-btn" data-page="dashboard" onclick="showPage('dashboard')">Dashboard</button>
+  </div>
+
+  <!-- ===== PAGE: FORM ===== -->
+  <div class="page active" id="page-form">
+    <div class="toggle-wrap">
+      <div class="toggle">
+        <button id="btnBerangkat" class="active" onclick="setMode('berangkat')">Keberangkatan</button>
+        <button id="btnPulang" onclick="setMode('pulang')">Kepulangan</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Info kendaraan</h2>
+      <div class="grid2">
+        <div class="field full" id="tripSelectWrap" style="display:none;">
+          <label>Pilih trip keberangkatan yang mau ditutup</label>
+          <select id="tripSelect" onchange="loadTrip()">
+            <option value="">Pilih trip</option>
+          </select>
+        </div>
+        <div class="trip-link" id="tripInfo"></div>
+        <div class="field">
+          <label>Nomor truck</label>
+          <select id="truck"><option value="">Pilih truck</option></select>
+        </div>
+        <div class="field">
+          <label>Nama driver</label>
+          <select id="driver"><option value="">Pilih driver</option></select>
+        </div>
+        <div class="field">
+          <label>Tanggal (hari ini)</label>
+          <div style="display:flex;gap:8px;">
+            <input type="number" id="tanggal" placeholder="12" min="1" max="31" style="flex:1;">
+            <div id="bulanBox" style="flex:1;padding:9px 10px;border:1px solid var(--border);border-radius:6px;background:#F3F4F6;color:var(--text-secondary);font-size:14px;"></div>
+          </div>
+        </div>
+        <div class="field">
+          <label id="kmLabel">KM keberangkatan</label>
+          <input type="number" id="km" placeholder="120000">
+        </div>
+        <div class="field full">
+          <label>Tujuan trip (kandang / client)</label>
+          <input type="text" id="tujuan" placeholder="Contoh: Kandang Naraya, Kandang Salakaria">
+        </div>
+        <div class="field">
+          <label>Indikator bensin</label>
+          <select id="bensin">
+            <option value="">Pilih persentase</option>
+            <option>30%</option><option>40%</option><option>50%</option><option>60%</option>
+            <option>70%</option><option>80%</option><option>90%</option><option>100%</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Foto indikator bensin (opsional)</label>
+          <div class="upload-box-sm" onclick="document.getElementById('bensinPhotoInput').click()">
+            <span id="bensinPhotoLabel">Tap untuk upload foto</span>
+          </div>
+          <input type="file" id="bensinPhotoInput" accept="image/*" capture="environment" style="display:none" onchange="handleBensinPhoto(this.files)">
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div id="checklistContainer"></div>
+    </div>
+
+    <div class="card">
+      <h2>Foto kondisi (opsional)</h2>
+      <div class="upload-box" onclick="document.getElementById('photoInput').click()">
+        <div class="up-icon">📷</div>
+        <div class="up-text">Tap untuk upload foto</div>
+        <div class="up-sub">Bisa lebih dari satu, tidak wajib diisi</div>
+      </div>
+      <input type="file" id="photoInput" accept="image/*" multiple capture="environment" style="display:none" onchange="handlePhotos(this.files)">
+      <div class="photo-preview" id="photoPreview"></div>
+    </div>
+
+    <div class="progress-note" id="progressNote">0 dari 17 item diperiksa</div>
+
+    <div class="footer-bar">
+      <button class="btn" onclick="resetForm()">Batal</button>
+      <button class="btn primary" id="submitBtn" onclick="submitForm()">Submit P2H</button>
+    </div>
+  </div>
+
+  <!-- ===== PAGE: RIWAYAT ===== -->
+  <div class="page" id="page-riwayat">
+    <div class="filter-row">
+      <select id="filterTruck"><option value="">Semua truck</option></select>
+      <select id="filterTipe">
+        <option value="">Semua tipe</option>
+        <option value="keberangkatan">Keberangkatan</option>
+        <option value="kepulangan">Kepulangan</option>
+      </select>
+    </div>
+    <div id="riwayatList">
+      <div class="loading-msg">Memuat riwayat...</div>
+    </div>
+  </div>
+
+  <!-- ===== PAGE: DASHBOARD ===== -->
+  <div class="page" id="page-dashboard">
+    <div class="stat-card">
+      <p class="label">Status truck</p>
+      <div id="dashTruckStatus"><div class="loading-msg">Memuat...</div></div>
+    </div>
+    <div class="stat-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <p class="label" style="margin:0;">Frekuensi item ditambahkan ke checklist</p>
+      </div>
+      <div id="dashItemFreq"><div class="loading-msg">Memuat...</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   SUPABASE CONFIG — ganti dengan punya lo sendiri
+   ========================================================= */
+const SUPABASE_URL = "https://xxxxxxxxxxxxx.supabase.co";
+const SUPABASE_ANON_KEY = "isi-anon-key-punya-lo-disini";
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/* =========================================================
+   CHECKLIST STRUCTURE (fallback kalau tabel master kosong)
+   ========================================================= */
+const categories = [
+  { name: "Pemeriksaan umum", items: ["Oli mesin","Battery / accu","Fungsi rem kaki","Fungsi exhouse brake","Tali kipas","Klakson","Sistem kemudi","Kaca depan, sekitar kabin panel"] },
+  { name: "Pemeriksaan sebelum distart", items: ["Ban badan gardan","Tekanan angin ban","Fungsi parkir brake"] },
+  { name: "Pemeriksaan setelah mesin hidup", items: ["Temperatur mesin","Wifer","Sistem steering","Suara","Lampu dan rotary","Back alarm"] }
+];
+
+const state = { statuses: {}, hasils: {}, notes: {}, mode: 'berangkat', photos: [], bensinPhoto: null, selectedTrip: null, trucks: [], drivers: [] };
+let totalItems = 0;
+
+/* ---------- INIT ---------- */
+async function init(){
+  buildChecklist();
+  const bulanNama = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+  const now = new Date();
+  document.getElementById('bulanBox').textContent = `${bulanNama[now.getMonth()]} ${now.getFullYear()}`;
+  await loadMasterData();
+}
+
+async function loadMasterData(){
+  const { data: trucks } = await supabase.from('trucks').select('*').eq('aktif', true).order('plat_nomor');
+  const { data: drivers } = await supabase.from('drivers').select('*').eq('aktif', true).order('nama');
+  state.trucks = trucks || [];
+  state.drivers = drivers || [];
+
+  const truckSel = document.getElementById('truck');
+  truckSel.innerHTML = '<option value="">Pilih truck</option>' + state.trucks.map(t => `<option value="${t.id}">${t.plat_nomor}</option>`).join('');
+
+  const driverSel = document.getElementById('driver');
+  driverSel.innerHTML = '<option value="">Pilih driver</option>' + state.drivers.map(d => `<option value="${d.id}">${d.nama}</option>`).join('');
+
+  const filterTruckSel = document.getElementById('filterTruck');
+  filterTruckSel.innerHTML = '<option value="">Semua truck</option>' + state.trucks.map(t => `<option value="${t.id}">${t.plat_nomor}</option>`).join('');
+}
+
+/* ---------- NAVIGASI HALAMAN ---------- */
+function showPage(page){
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
+  document.querySelector(`.nav-btn[data-page="${page}"]`).classList.add('active');
+  if(page === 'riwayat') loadRiwayat();
+  if(page === 'dashboard') loadDashboard();
+}
+
+/* ---------- CHECKLIST ---------- */
+function buildChecklist(){
+  const container = document.getElementById('checklistContainer');
+  container.innerHTML = '';
+  let idx = 0;
+  totalItems = 0;
+  categories.forEach((cat, ci) => {
+    const title = document.createElement('div');
+    title.className = 'cat-title';
+    title.innerHTML = `<span class="cat-num">${ci+1}</span> ${cat.name}`;
+    container.appendChild(title);
+    cat.items.forEach(itemName => {
+      idx++; totalItems++;
+      const key = `item_${idx}`;
+      const item = document.createElement('div');
+      item.className = 'item';
+      item.dataset.key = key;
+      item.dataset.name = itemName;
+      item.dataset.kategori = cat.name;
+      item.innerHTML = `
+        <div class="item-row">
+          <span class="item-name">${itemName}</span>
+          <div class="status-btns">
+            <button class="status-btn aman" onclick="setStatus('${key}','aman',this)">Aman</button>
+            <button class="status-btn kurang" onclick="setStatus('${key}','kurang',this)">Kurang baik</button>
+            <button class="status-btn ganti" onclick="setStatus('${key}','ganti',this)">Perlu diganti</button>
+          </div>
+        </div>
+        <div class="item-row2">
+          <span class="label-small">Hasil</span>
+          <div class="hasil-btns">
+            <button class="hasil-btn layak" onclick="setHasil('${key}','layak',this)">Layak</button>
+            <button class="hasil-btn tidak" onclick="setHasil('${key}','tidak',this)">Tidak</button>
+          </div>
+        </div>
+        <input class="item-note" placeholder="Keterangan (opsional)" oninput="state.notes['${key}']=this.value">
+      `;
+      container.appendChild(item);
+    });
+  });
+  document.getElementById('progressNote').textContent = `0 dari ${totalItems} item diperiksa`;
+}
+
+function setStatus(key, val, btn){
+  state.statuses[key] = val;
+  const row = btn.closest('.item-row');
+  row.querySelectorAll('.status-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  updateProgress();
+}
+function setHasil(key, val, btn){
+  state.hasils[key] = val;
+  const row = btn.closest('.item-row2');
+  row.querySelectorAll('.hasil-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+function updateProgress(){
+  const filled = Object.keys(state.statuses).length;
+  document.getElementById('progressNote').textContent = `${filled} dari ${totalItems} item diperiksa`;
+}
+
+/* ---------- FOTO ---------- */
+function handlePhotos(files){
+  Array.from(files).forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => { state.photos.push({ file, dataUrl: e.target.result }); renderPhotos(); };
+    reader.readAsDataURL(file);
+  });
+}
+function renderPhotos(){
+  const wrap = document.getElementById('photoPreview');
+  wrap.innerHTML = state.photos.map((p, i) => `<div class="photo-thumb"><img src="${p.dataUrl}"><button class="remove-btn" onclick="removePhoto(${i})">×</button></div>`).join('');
+}
+function removePhoto(i){ state.photos.splice(i,1); renderPhotos(); }
+
+function handleBensinPhoto(files){
+  if(!files.length) return;
+  state.bensinPhotoFile = files[0];
+  const reader = new FileReader();
+  reader.onload = e => {
+    state.bensinPhoto = e.target.result;
+    document.getElementById('bensinPhotoLabel').textContent = 'Foto tersimpan, tap untuk ganti';
+    document.querySelector('.upload-box-sm').classList.add('has-photo');
+  };
+  reader.readAsDataURL(files[0]);
+}
+
+/* ---------- MODE KEBERANGKATAN / KEPULANGAN ---------- */
+function setMode(mode){
+  state.mode = mode;
+  document.getElementById('btnBerangkat').classList.toggle('active', mode==='berangkat');
+  document.getElementById('btnPulang').classList.toggle('active', mode==='pulang');
+  document.getElementById('kmLabel').textContent = mode==='berangkat' ? 'KM keberangkatan' : 'KM kepulangan';
+
+  const tripWrap = document.getElementById('tripSelectWrap');
+  const tripInfo = document.getElementById('tripInfo');
+  if(mode === 'pulang'){
+    tripWrap.style.display = 'block';
+    loadOpenTrips();
+    document.getElementById('tripSelect').value = '';
+    setFieldsLocked(false);
+  } else {
+    tripWrap.style.display = 'none';
+    tripInfo.classList.remove('show');
+    setFieldsLocked(false);
+  }
+  state.selectedTrip = null;
+}
+
+async function loadOpenTrips(){
+  // trip terbuka = submission tipe keberangkatan yang belum ada pasangan kepulangan
+  const { data: berangkatList } = await supabase.from('p2h_submissions').select('*').eq('tipe', 'keberangkatan').order('created_at', { ascending: false });
+  const { data: pulangList } = await supabase.from('p2h_submissions').select('trip_ref_id').eq('tipe', 'kepulangan');
+  const closedIds = new Set((pulangList || []).map(p => p.trip_ref_id));
+  const open = (berangkatList || []).filter(b => !closedIds.has(b.id));
+
+  const sel = document.getElementById('tripSelect');
+  sel.innerHTML = '<option value="">Pilih trip</option>' + open.map(t => {
+    const truckName = state.trucks.find(x => x.id === t.truck_id)?.plat_nomor || '?';
+    const driverName = state.drivers.find(x => x.id === t.driver_id)?.nama || '?';
+    return `<option value="${t.id}">${truckName} - ${driverName} (berangkat tgl ${t.tanggal}, KM ${Number(t.km).toLocaleString('id-ID')}) - ${t.tujuan||'-'}</option>`;
+  }).join('');
+  state._openTripsCache = open;
+}
+
+function loadTrip(){
+  const id = document.getElementById('tripSelect').value;
+  const tripInfo = document.getElementById('tripInfo');
+  if(!id){
+    state.selectedTrip = null;
+    tripInfo.classList.remove('show');
+    setFieldsLocked(false);
+    return;
+  }
+  const trip = state._openTripsCache.find(t => t.id === id);
+  state.selectedTrip = trip;
+  document.getElementById('truck').value = trip.truck_id;
+  document.getElementById('driver').value = trip.driver_id;
+  document.getElementById('tujuan').value = trip.tujuan || '';
+  document.getElementById('tujuan').disabled = true;
+  document.getElementById('tujuan').classList.add('readonly-field');
+  const truckName = state.trucks.find(x => x.id === trip.truck_id)?.plat_nomor || '?';
+  tripInfo.innerHTML = `Trip ini berangkat tgl <b>${trip.tanggal}</b> dengan KM awal <b>${Number(trip.km).toLocaleString('id-ID')}</b>, tujuan <b>${trip.tujuan||'-'}</b>. Truck dan driver otomatis terkunci.`;
+  tripInfo.classList.add('show');
+  setFieldsLocked(true);
+}
+
+function setFieldsLocked(locked){
+  const truckEl = document.getElementById('truck');
+  const driverEl = document.getElementById('driver');
+  const tujuanEl = document.getElementById('tujuan');
+  truckEl.disabled = locked;
+  driverEl.disabled = locked;
+  truckEl.classList.toggle('readonly-field', locked);
+  driverEl.classList.toggle('readonly-field', locked);
+  if(!locked){
+    truckEl.value = '';
+    driverEl.value = '';
+    tujuanEl.value = '';
+    tujuanEl.disabled = false;
+    tujuanEl.classList.remove('readonly-field');
+  }
+}
+
+/* ---------- SUBMIT ---------- */
+async function submitForm(){
+  const filled = Object.keys(state.statuses).length;
+  const truckVal = document.getElementById('truck').value;
+  const driverVal = document.getElementById('driver').value;
+  const tanggalVal = document.getElementById('tanggal').value;
+  const kmVal = document.getElementById('km').value;
+  const tujuanVal = document.getElementById('tujuan').value;
+  const bensinVal = document.getElementById('bensin').value;
+
+  if(state.mode === 'pulang' && !state.selectedTrip){ alert('Pilih dulu trip keberangkatan yang mau ditutup.'); return; }
+  if(!truckVal || !driverVal || !tanggalVal || !kmVal){ alert('Lengkapi info kendaraan dulu ya.'); return; }
+  if(state.mode === 'pulang' && Number(kmVal) < Number(state.selectedTrip.km)){
+    alert(`KM kepulangan tidak boleh lebih kecil dari KM keberangkatan (${Number(state.selectedTrip.km).toLocaleString('id-ID')}).`);
+    return;
+  }
+  if(filled < totalItems){ alert(`Masih ada ${totalItems - filled} item yang belum diperiksa.`); return; }
+  const hasilFilled = Object.keys(state.hasils).length;
+  if(hasilFilled < totalItems){ alert(`Masih ada ${totalItems - hasilFilled} item yang belum diisi hasil (Layak/Tidak).`); return; }
+
+  const submitBtn = document.getElementById('submitBtn');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Menyimpan...';
+
+  try {
+    // upload foto ke storage bucket "p2h-photos" (bucket harus dibuat dulu di Supabase, lihat panduan)
+    const photoUrls = [];
+    for(const p of state.photos){
+      const path = `submission-${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+      const { data, error } = await supabase.storage.from('p2h-photos').upload(path, p.file);
+      if(!error){ photoUrls.push(supabase.storage.from('p2h-photos').getPublicUrl(path).data.publicUrl); }
+    }
+    let bensinPhotoUrl = null;
+    if(state.bensinPhotoFile){
+      const path = `bensin-${Date.now()}.jpg`;
+      const { data, error } = await supabase.storage.from('p2h-photos').upload(path, state.bensinPhotoFile);
+      if(!error){ bensinPhotoUrl = supabase.storage.from('p2h-photos').getPublicUrl(path).data.publicUrl; }
+    }
+
+    const { data: submission, error: subErr } = await supabase.from('p2h_submissions').insert({
+      truck_id: truckVal,
+      driver_id: driverVal,
+      tipe: state.mode === 'berangkat' ? 'keberangkatan' : 'kepulangan',
+      tanggal: Number(tanggalVal),
+      km: Number(kmVal),
+      tujuan: tujuanVal || null,
+      bensin_persen: bensinVal || null,
+      bensin_foto_url: bensinPhotoUrl,
+      foto_urls: photoUrls,
+      trip_ref_id: state.mode === 'pulang' ? state.selectedTrip.id : null
+    }).select().single();
+
+    if(subErr) throw subErr;
+
+    const itemRows = [];
+    document.querySelectorAll('#checklistContainer .item').forEach(el => {
+      const key = el.dataset.key;
+      itemRows.push({
+        submission_id: submission.id,
+        nama_item: el.dataset.name,
+        kategori: el.dataset.kategori,
+        status: state.statuses[key],
+        hasil: state.hasils[key],
+        keterangan: state.notes[key] || null
+      });
+    });
+    const { error: itemErr } = await supabase.from('p2h_submission_items').insert(itemRows);
+    if(itemErr) throw itemErr;
+
+    alert('P2H berhasil disimpan.');
+    resetForm();
+  } catch(err){
+    console.error(err);
+    alert('Gagal menyimpan: ' + err.message);
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Submit P2H';
+  }
+}
+
+function resetForm(){
+  state.statuses = {}; state.hasils = {}; state.notes = {}; state.photos = []; state.bensinPhoto = null; state.bensinPhotoFile = null;
+  document.getElementById('truck').value = '';
+  document.getElementById('driver').value = '';
+  document.getElementById('tanggal').value = '';
+  document.getElementById('km').value = '';
+  document.getElementById('tujuan').value = '';
+  document.getElementById('bensin').value = '';
+  document.getElementById('bensinPhotoLabel').textContent = 'Tap untuk upload foto';
+  document.querySelector('.upload-box-sm').classList.remove('has-photo');
+  renderPhotos();
+  buildChecklist();
+  setMode('berangkat');
+}
+
+/* ---------- RIWAYAT TRIP ---------- */
+async function loadRiwayat(){
+  const truckFilter = document.getElementById('filterTruck').value;
+  const tipeFilter = document.getElementById('filterTipe').value;
+  let query = supabase.from('p2h_submissions').select('*').order('created_at', { ascending: false }).limit(50);
+  if(truckFilter) query = query.eq('truck_id', truckFilter);
+  if(tipeFilter) query = query.eq('tipe', tipeFilter);
+  const { data, error } = await query;
+
+  const list = document.getElementById('riwayatList');
+  if(error){ list.innerHTML = `<div class="empty-state">Gagal memuat riwayat.</div>`; return; }
+  if(!data || data.length === 0){ list.innerHTML = `<div class="empty-state">Belum ada riwayat trip.</div>`; return; }
+
+  list.innerHTML = data.map(t => {
+    const truckName = state.trucks.find(x => x.id === t.truck_id)?.plat_nomor || '?';
+    const driverName = state.drivers.find(x => x.id === t.driver_id)?.nama || '?';
+    const tipeLabel = t.tipe === 'keberangkatan' ? 'Keberangkatan' : 'Kepulangan';
+    return `
+      <div class="trip-item">
+        <div class="trip-item-top">
+          <b>${truckName} - ${driverName}</b>
+          <span class="badge ${t.tipe==='keberangkatan'?'open':'closed'}">${tipeLabel}</span>
+        </div>
+        <div class="trip-item-sub">Tgl ${t.tanggal} · KM ${Number(t.km).toLocaleString('id-ID')} · ${t.tujuan || '-'}</div>
+      </div>
+    `;
+  }).join('');
+}
+document.getElementById('filterTruck')?.addEventListener('change', loadRiwayat);
+document.getElementById('filterTipe')?.addEventListener('change', loadRiwayat);
+
+/* ---------- DASHBOARD ---------- */
+async function loadDashboard(){
+  // status truck: cek trip terbuka per truck
+  const { data: berangkatList } = await supabase.from('p2h_submissions').select('*').eq('tipe', 'keberangkatan');
+  const { data: pulangList } = await supabase.from('p2h_submissions').select('trip_ref_id').eq('tipe', 'kepulangan');
+  const closedIds = new Set((pulangList || []).map(p => p.trip_ref_id));
+  const openByTruck = {};
+  (berangkatList || []).forEach(b => { if(!closedIds.has(b.id)) openByTruck[b.truck_id] = b; });
+
+  const truckStatusEl = document.getElementById('dashTruckStatus');
+  truckStatusEl.innerHTML = state.trucks.map(t => {
+    const open = openByTruck[t.id];
+    return `
+      <div class="truck-status-row">
+        <span style="font-size:13px;">${t.plat_nomor}</span>
+        ${open
+          ? `<span class="badge open">Sedang trip - ${open.tujuan || '-'}</span>`
+          : `<span class="badge closed">Standby</span>`}
+      </div>
+    `;
+  }).join('') || `<div class="empty-state">Belum ada data truck.</div>`;
+
+  // frekuensi item ditambahkan ke master checklist (dari tabel log, lihat panduan Supabase)
+  const { data: logs } = await supabase.from('p2h_checklist_log').select('*').eq('aksi', 'tambah').order('created_at', { ascending: false }).limit(10);
+  const freqEl = document.getElementById('dashItemFreq');
+  if(!logs || logs.length === 0){
+    freqEl.innerHTML = `<div class="empty-state">Belum ada riwayat penambahan item checklist.</div>`;
+  } else {
+    freqEl.innerHTML = logs.map(l => `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border);font-size:12px;">
+        <span style="color:var(--text-muted);width:70px;flex-shrink:0;">${new Date(l.created_at).toLocaleDateString('id-ID')}</span>
+        <span>Item "${l.nama_item}" ditambahkan ke kategori ${l.kategori}</span>
+      </div>
+    `).join('');
+  }
+}
+
+init();
+</script>
+</body>
+</html>
