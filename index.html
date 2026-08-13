@@ -147,6 +147,14 @@
   @keyframes spin{to{transform:rotate(360deg);}}
   .badge.stale{background:var(--red-bg);color:var(--red-dark);}
 
+  .km-truck-block{padding:12px 0;border-bottom:0.5px solid var(--border);}
+  .km-truck-block:last-child{border-bottom:none;}
+  .km-truck-block .km-truck-name{font-size:13px;font-weight:600;margin-bottom:8px;}
+  .km-stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
+  .km-stat-box{background:#F9FAFB;border-radius:8px;padding:8px 10px;}
+  .km-stat-box .km-stat-label{font-size:10px;color:var(--text-muted);margin-bottom:2px;}
+  .km-stat-box .km-stat-value{font-size:14px;font-weight:600;color:var(--text);}
+
   /* Master data */
   .btn-add{padding:7px 12px;font-size:12px;font-weight:600;border-radius:6px;border:1px solid var(--red);background:var(--red-bg);color:var(--red-dark);cursor:pointer;}
   .master-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:0.5px solid var(--border);}
@@ -282,6 +290,10 @@
       <div id="dashTruckStatus"><div class="loading-msg">Memuat...</div></div>
     </div>
     <div class="stat-card">
+      <p class="label">KM truck</p>
+      <div id="dashKmStats"><div class="loading-msg">Memuat...</div></div>
+    </div>
+    <div class="stat-card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
         <p class="label" style="margin:0;">Frekuensi item ditambahkan ke checklist</p>
       </div>
@@ -358,8 +370,18 @@ async function init(){
   buildChecklist();
 }
 
+const KATEGORI_ORDER = ["Pemeriksaan umum", "Pemeriksaan sebelum distart", "Pemeriksaan setelah mesin hidup"];
+function sortByKategoriOrder(a, b){
+  const ia = KATEGORI_ORDER.indexOf(a);
+  const ib = KATEGORI_ORDER.indexOf(b);
+  if(ia === -1 && ib === -1) return a.localeCompare(b);
+  if(ia === -1) return 1;
+  if(ib === -1) return -1;
+  return ia - ib;
+}
+
 async function loadChecklistItems(){
-  const { data, error } = await sb.from('p2h_checklist_items').select('*').order('kategori').order('urutan');
+  const { data, error } = await sb.from('p2h_checklist_items').select('*').order('urutan');
   if(error || !data || data.length === 0){
     categories = DEFAULT_CATEGORIES; // fallback kalau tabel belum ada / kosong
     return;
@@ -370,6 +392,7 @@ async function loadChecklistItems(){
     if(!grouped[row.kategori]){ grouped[row.kategori] = []; order.push(row.kategori); }
     grouped[row.kategori].push(row.nama_item);
   });
+  order.sort(sortByKategoriOrder);
   categories = order.map(k => ({ name: k, items: grouped[k] }));
 }
 
@@ -715,17 +738,32 @@ async function loadRiwayat(){
   if(error){ list.innerHTML = `<div class="empty-state">Gagal memuat riwayat.</div>`; return; }
   if(!data || data.length === 0){ list.innerHTML = `<div class="empty-state">Belum ada riwayat trip.</div>`; return; }
 
+  // ambil km trip keberangkatan buat semua kepulangan yang trip_ref_id-nya ga ada di batch data ini
+  const refIdsNeeded = data.filter(t => t.tipe === 'kepulangan' && t.trip_ref_id).map(t => t.trip_ref_id);
+  const kmByRefId = {};
+  data.forEach(t => { kmByRefId[t.id] = t.km; });
+  const missingRefIds = refIdsNeeded.filter(id => !(id in kmByRefId));
+  if(missingRefIds.length){
+    const { data: refRows } = await sb.from('p2h_submissions').select('id, km').in('id', missingRefIds);
+    (refRows || []).forEach(r => { kmByRefId[r.id] = r.km; });
+  }
+
   list.innerHTML = data.map(t => {
     const truckName = state.trucks.find(x => x.id === t.truck_id)?.plat_nomor || '?';
     const driverName = state.drivers.find(x => x.id === t.driver_id)?.nama || '?';
     const tipeLabel = t.tipe === 'keberangkatan' ? 'Keberangkatan' : 'Kepulangan';
+    let deltaHtml = '';
+    if(t.tipe === 'kepulangan' && t.trip_ref_id && kmByRefId[t.trip_ref_id] != null){
+      const delta = Number(t.km) - Number(kmByRefId[t.trip_ref_id]);
+      deltaHtml = ` <span style="color:var(--green);font-weight:600;">(+${delta.toLocaleString('id-ID')} km)</span>`;
+    }
     return `
       <div class="trip-item" onclick="toggleTripDetail('${t.id}', this)">
         <div class="trip-item-top">
           <b>${truckName} - ${driverName}</b>
           <span class="badge ${t.tipe==='keberangkatan'?'open':'closed'}">${tipeLabel}</span>
         </div>
-        <div class="trip-item-sub">Tgl ${t.tanggal} · KM ${Number(t.km).toLocaleString('id-ID')} · ${t.tujuan || '-'}</div>
+        <div class="trip-item-sub">Tgl ${t.tanggal} · KM ${Number(t.km).toLocaleString('id-ID')}${deltaHtml} · ${t.tujuan || '-'}</div>
         <div class="trip-detail" id="detail-${t.id}"></div>
       </div>
     `;
@@ -823,6 +861,66 @@ async function loadDashboard(){
     truckStatusEl.innerHTML = `<div style="background:var(--red-bg);border:1px solid #FCA5A5;color:var(--red-dark);border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:10px;">⚠ Trip belum ditutup lebih dari 24 jam: <b>${staleTrucks.join(', ')}</b>. Cek dan lengkapi form kepulangan.</div>` + truckStatusEl.innerHTML;
   }
 
+  // ---- KM truck: total KM tercatat, total penambahan (dari selisih tiap trip), rata2 per hari/minggu/bulan ----
+  const { data: allSubsFull } = await sb.from('p2h_submissions').select('id, truck_id, km, tipe, trip_ref_id, created_at').order('created_at', { ascending: true });
+  const kmEl = document.getElementById('dashKmStats');
+
+  if(!allSubsFull || allSubsFull.length === 0){
+    kmEl.innerHTML = `<div class="empty-state">Belum ada data KM.</div>`;
+  } else {
+    const kmMap = {};
+    allSubsFull.forEach(s => { kmMap[s.id] = s.km; });
+
+    const perTruck = {};
+    state.trucks.forEach(t => { perTruck[t.id] = { deltas: [], kmTerakhir: 0, dates: [] }; });
+
+    allSubsFull.forEach(s => {
+      if(!perTruck[s.truck_id]) perTruck[s.truck_id] = { deltas: [], kmTerakhir: 0, dates: [] };
+      if(Number(s.km) > perTruck[s.truck_id].kmTerakhir) perTruck[s.truck_id].kmTerakhir = Number(s.km);
+      if(s.tipe === 'kepulangan' && s.trip_ref_id && kmMap[s.trip_ref_id] != null){
+        const delta = Number(s.km) - Number(kmMap[s.trip_ref_id]);
+        if(delta >= 0){
+          perTruck[s.truck_id].deltas.push(delta);
+          perTruck[s.truck_id].dates.push(new Date(s.created_at));
+        }
+      }
+    });
+
+    kmEl.innerHTML = state.trucks.map(t => {
+      const d = perTruck[t.id] || { deltas: [], kmTerakhir: 0, dates: [] };
+      const totalPenambahan = d.deltas.reduce((a,b) => a+b, 0);
+      if(d.dates.length === 0){
+        return `
+          <div class="km-truck-block">
+            <div class="km-truck-name">${t.plat_nomor}</div>
+            <div class="km-stat-grid">
+              <div class="km-stat-box"><div class="km-stat-label">KM terakhir</div><div class="km-stat-value">${d.kmTerakhir.toLocaleString('id-ID')}</div></div>
+              <div class="km-stat-box"><div class="km-stat-label">Total penambahan</div><div class="km-stat-value">-</div></div>
+            </div>
+          </div>
+        `;
+      }
+      const earliest = new Date(Math.min(...d.dates.map(x=>x.getTime())));
+      const latest = new Date(Math.max(...d.dates.map(x=>x.getTime())));
+      const spanDays = Math.max(1, Math.round((latest - earliest) / 86400000) + 1);
+      const avgHari = totalPenambahan / spanDays;
+      const avgMinggu = avgHari * 7;
+      const avgBulan = avgHari * 30;
+
+      return `
+        <div class="km-truck-block">
+          <div class="km-truck-name">${t.plat_nomor}</div>
+          <div class="km-stat-grid">
+            <div class="km-stat-box"><div class="km-stat-label">KM terakhir</div><div class="km-stat-value">${d.kmTerakhir.toLocaleString('id-ID')}</div></div>
+            <div class="km-stat-box"><div class="km-stat-label">Total penambahan</div><div class="km-stat-value">${totalPenambahan.toLocaleString('id-ID')} km</div></div>
+            <div class="km-stat-box"><div class="km-stat-label">Rata-rata / hari</div><div class="km-stat-value">${Math.round(avgHari).toLocaleString('id-ID')} km</div></div>
+            <div class="km-stat-box"><div class="km-stat-label">Rata-rata / minggu</div><div class="km-stat-value">${Math.round(avgMinggu).toLocaleString('id-ID')} km</div></div>
+          </div>
+        </div>
+      `;
+    }).join('') || `<div class="empty-state">Belum ada data truck.</div>`;
+  }
+
   // frekuensi item ditambahkan ke master checklist (dari tabel log, lihat panduan Supabase)
   const { data: logs } = await sb.from('p2h_checklist_log').select('*').eq('aksi', 'tambah').order('created_at', { ascending: false }).limit(10);
   const freqEl = document.getElementById('dashItemFreq');
@@ -910,7 +1008,7 @@ async function toggleDriverActive(id, newVal){
 }
 
 async function renderMasterItems(){
-  const { data } = await sb.from('p2h_checklist_items').select('*').order('kategori').order('urutan');
+  const { data } = await sb.from('p2h_checklist_items').select('*').order('urutan');
   const wrap = document.getElementById('masterItemList');
   if(!data || data.length === 0){
     wrap.innerHTML = `<div class="empty-state">Belum ada item di database (masih pakai checklist bawaan). Tambah item baru untuk mulai kelola dari sini.</div>`;
@@ -922,6 +1020,7 @@ async function renderMasterItems(){
     if(!grouped[row.kategori]){ grouped[row.kategori] = []; order.push(row.kategori); }
     grouped[row.kategori].push(row);
   });
+  order.sort(sortByKategoriOrder);
   wrap.innerHTML = order.map(kategori => `
     <div class="master-item-group">
       <div class="group-title">${kategori}</div>
