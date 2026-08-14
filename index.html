@@ -135,6 +135,7 @@
   .trip-leg-tag.pulang{background:var(--green-bg);color:var(--green);}
   .btn-export-pdf{margin-top:10px;width:100%;padding:8px;font-size:12px;font-weight:600;border-radius:6px;border:1px solid var(--border-strong);background:#fff;color:var(--text-secondary);cursor:pointer;}
   .btn-export-pdf:hover{border-color:var(--red);color:var(--red-dark);}
+  .form-open-trip-banner{background:var(--red-bg);border:1px solid #FCA5A5;color:var(--red-dark);border-radius:8px;padding:10px 12px;font-size:12px;margin:16px;}
 
   /* Dashboard */
   .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem 1.25rem;margin:16px;}
@@ -214,6 +215,7 @@
 
   <!-- ===== PAGE: FORM ===== -->
   <div class="page active" id="page-form">
+    <div id="openTripWarning"></div>
     <div class="toggle-wrap">
       <div class="toggle">
         <button id="btnBerangkat" class="active" onclick="setMode('berangkat')">Keberangkatan</button>
@@ -231,10 +233,6 @@
           </select>
         </div>
         <div class="trip-link" id="tripInfo"></div>
-        <div class="field full">
-          <label>Nama koordinator (yang input form ini)</label>
-          <input type="text" id="koordinator" placeholder="Nama koordinator">
-        </div>
         <div class="field">
           <label>Nomor truck</label>
           <select id="truck"><option value="">Pilih truck</option></select>
@@ -433,6 +431,14 @@ function formatTanggalLengkap(tanggalNum, createdAt){
   return `Tgl ${tanggalNum}`;
 }
 
+function formatJam(createdAt){
+  if(!createdAt) return '';
+  const d = new Date(createdAt);
+  const jam = String(d.getHours()).padStart(2,'0');
+  const menit = String(d.getMinutes()).padStart(2,'0');
+  return `${jam}:${menit}`;
+}
+
 /* ---------- INIT ---------- */
 async function init(){
   const bulanNama = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
@@ -441,7 +447,31 @@ async function init(){
   await loadMasterData();
   await loadChecklistItems();
   buildChecklist();
+  checkOpenTripsWarning();
 }
+
+async function checkOpenTripsWarning(){
+  const { data: berangkatList } = await sb.from('p2h_submissions').select('id, truck_id, tujuan, created_at').eq('tipe', 'keberangkatan');
+  const { data: pulangList } = await sb.from('p2h_submissions').select('trip_ref_id').eq('tipe', 'kepulangan');
+  const closedIds = new Set((pulangList || []).map(p => p.trip_ref_id));
+  const open = (berangkatList || []).filter(b => !closedIds.has(b.id));
+
+  const warnEl = document.getElementById('openTripWarning');
+  if(!warnEl) return;
+  if(open.length === 0){ warnEl.innerHTML = ''; return; }
+
+  const now = Date.now();
+  const items = open.map(b => {
+    const truckName = state.trucks.find(t => t.id === b.truck_id)?.plat_nomor || '?';
+    const hoursOpen = b.created_at ? (now - new Date(b.created_at).getTime()) / 3600000 : 0;
+    const isStale = hoursOpen >= 24;
+    return `${isStale ? '⚠ ' : ''}<b>${truckName}</b>${b.tujuan ? ' — '+b.tujuan : ''}`;
+  }).join(', ');
+
+  warnEl.innerHTML = `<div class="form-open-trip-banner">🚚 Truck yang belum diisi kepulangannya: ${items}. Jangan lupa lengkapi form kepulangan.</div>`;
+}
+
+const KOORDINATOR_NAME = "Rachmat Mauly";
 
 const KATEGORI_ORDER = ["Pemeriksaan umum", "Pemeriksaan sebelum distart", "Pemeriksaan setelah mesin hidup"];
 function sortByKategoriOrder(a, b){
@@ -491,6 +521,7 @@ function showPage(page){
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   document.querySelector(`.nav-btn[data-page="${page}"]`).classList.add('active');
+  if(page === 'form') checkOpenTripsWarning();
   if(page === 'riwayat') loadRiwayat();
   if(page === 'dashboard') loadDashboard();
   if(page === 'master') loadMasterPage();
@@ -680,9 +711,8 @@ async function submitForm(){
   const kmVal = document.getElementById('km').value;
   const tujuanVal = document.getElementById('tujuan').value;
   const bensinVal = document.getElementById('bensin').value;
-  const koordinatorVal = document.getElementById('koordinator').value.trim();
+  const koordinatorVal = KOORDINATOR_NAME;
 
-  if(!koordinatorVal){ showToast('Nama koordinator belum diisi.', true); document.getElementById('koordinator').scrollIntoView({behavior:'smooth', block:'center'}); return; }
   if(state.mode === 'pulang' && !state.selectedTrip){
     showToast('Pilih dulu trip keberangkatan yang mau ditutup.', true);
     document.getElementById('tripSelect').scrollIntoView({behavior:'smooth', block:'center'});
@@ -747,7 +777,7 @@ async function confirmSubmitForm(){
   const kmVal = document.getElementById('km').value;
   const tujuanVal = document.getElementById('tujuan').value;
   const bensinVal = document.getElementById('bensin').value;
-  const koordinatorVal = document.getElementById('koordinator').value.trim();
+  const koordinatorVal = KOORDINATOR_NAME;
 
   const submitBtn = document.getElementById('submitBtn');
   submitBtn.disabled = true;
@@ -801,6 +831,7 @@ async function confirmSubmitForm(){
 
     showToast('P2H berhasil disimpan.');
     resetForm();
+    checkOpenTripsWarning();
   } catch(err){
     console.error(err);
     showToast('Gagal menyimpan: ' + err.message, true);
@@ -814,7 +845,6 @@ function hasUnsavedProgress(){
   return Object.keys(state.statuses).length > 0
     || document.getElementById('truck').value
     || document.getElementById('driver').value
-    || document.getElementById('koordinator').value.trim()
     || document.getElementById('tanggal').value
     || document.getElementById('km').value
     || state.photos.length > 0
@@ -830,7 +860,6 @@ function resetForm(){
   state.statuses = {}; state.hasils = {}; state.notes = {}; state.photos = []; state.bensinPhoto = null; state.bensinPhotoFile = null;
   document.getElementById('truck').value = '';
   document.getElementById('driver').value = '';
-  document.getElementById('koordinator').value = '';
   document.getElementById('tanggal').value = '';
   document.getElementById('km').value = '';
   document.getElementById('tujuan').value = '';
@@ -894,7 +923,7 @@ async function loadRiwayat(){
       pulangRow = `
         <div class="trip-leg">
           <span class="trip-leg-tag pulang">Pulang</span>
-          <span class="trip-leg-text">${formatTanggalLengkap(p.tanggal, p.created_at)} · KM ${Number(p.km).toLocaleString('id-ID')} <span style="color:var(--green);font-weight:600;">(+${delta.toLocaleString('id-ID')} km)</span>${driverPulang !== driverBerangkat ? ' · '+driverPulang : ''}${p.koordinator ? ' · Koor: '+p.koordinator : ''}</span>
+          <span class="trip-leg-text">${formatTanggalLengkap(p.tanggal, p.created_at)}, ${formatJam(p.created_at)} · KM ${Number(p.km).toLocaleString('id-ID')} <span style="color:var(--green);font-weight:600;">(+${delta.toLocaleString('id-ID')} km)</span>${driverPulang !== driverBerangkat ? ' · '+driverPulang : ''}${p.koordinator ? ' · Koor: '+p.koordinator : ''}</span>
         </div>
       `;
     }
@@ -907,10 +936,10 @@ async function loadRiwayat(){
         </div>
         <div class="trip-leg">
           <span class="trip-leg-tag berangkat">Berangkat</span>
-          <span class="trip-leg-text">${formatTanggalLengkap(b.tanggal, b.created_at)} · KM ${Number(b.km).toLocaleString('id-ID')} · ${b.tujuan || '-'}${b.koordinator ? ' · Koor: '+b.koordinator : ''}</span>
+          <span class="trip-leg-text">${formatTanggalLengkap(b.tanggal, b.created_at)}, ${formatJam(b.created_at)} · KM ${Number(b.km).toLocaleString('id-ID')} · ${b.tujuan || '-'}${b.koordinator ? ' · Koor: '+b.koordinator : ''}</span>
         </div>
         ${pulangRow}
-        <button class="btn-export-pdf" onclick="event.stopPropagation(); exportTripPdf('${b.id}${p ? ','+p.id : ''}')">⬇ Export PDF</button>
+        <button class="btn-export-pdf" onclick="event.stopPropagation(); exportTripPdf('${b.id}${p ? ','+p.id : ''}')">⬇ Download Laporan</button>
         <div class="trip-detail" id="detail-${b.id}"></div>
       </div>
     `;
@@ -938,20 +967,25 @@ async function exportTripPdf(submissionIds){
   const pageWidth = doc.internal.pageSize.getWidth();
   let y = 18;
 
-  // header
-  doc.setFillColor(31, 41, 55);
-  doc.rect(0, 0, pageWidth, 24, 'F');
-  doc.setTextColor(255,255,255);
-  doc.setFontSize(14);
-  doc.setFont(undefined, 'bold');
-  doc.text('Laporan P2H — Pemeriksaan dan Perawatan Harian Truck', 14, 12);
-  doc.setFontSize(10);
-  doc.setFont(undefined, 'normal');
-  doc.text(`Gastron · ${truckName}`, 14, 19);
-  doc.setTextColor(0,0,0);
+  function drawHeader(){
+    doc.setFillColor(31, 41, 55);
+    doc.rect(0, 0, pageWidth, 24, 'F');
+    doc.setTextColor(255,255,255);
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.text('Laporan P2H — Pemeriksaan dan Perawatan Harian Truck', 14, 12);
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    doc.text(`Gastron · ${truckName}`, 14, 19);
+    doc.setTextColor(0,0,0);
+  }
+
+  drawHeader();
   y = 32;
 
   legs.forEach((leg, idx) => {
+    if(idx > 0){ doc.addPage(); drawHeader(); y = 32; }
+
     const s = leg.sub;
     const driverName = state.drivers.find(x => x.id === s.driver_id)?.nama || '-';
     const legLabel = ids.length > 1 ? (idx === 0 ? 'KEBERANGKATAN' : 'KEPULANGAN') : (s.tipe === 'keberangkatan' ? 'KEBERANGKATAN' : 'KEPULANGAN');
@@ -966,6 +1000,7 @@ async function exportTripPdf(submissionIds){
     const bulanNama = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
     const d = new Date(s.created_at);
     const tanggalLengkap = `${s.tanggal} ${bulanNama[d.getMonth()]} ${d.getFullYear()}`;
+    const jamInput = formatJam(s.created_at);
 
     doc.autoTable({
       startY: y,
@@ -976,6 +1011,7 @@ async function exportTripPdf(submissionIds){
         ['Koordinator', s.koordinator || '-'],
         ['Driver', driverName],
         ['Tanggal', tanggalLengkap],
+        ['Jam input data', jamInput || '-'],
         ['KM', Number(s.km).toLocaleString('id-ID')],
         ['Tujuan', s.tujuan || '-'],
         ['Indikator bensin', s.bensin_persen || '-'],
@@ -1014,8 +1050,6 @@ async function exportTripPdf(submissionIds){
       }
     });
     y = doc.lastAutoTable.finalY + 8;
-
-    if(y > 260 && idx < legs.length - 1){ doc.addPage(); y = 18; }
   });
 
   doc.setFontSize(8);
@@ -1049,7 +1083,7 @@ async function toggleTripDetail(submissionIds, cardEl){
     const { data: sub } = await sb.from('p2h_submissions').select('*').eq('id', id).single();
 
     if(legLabels[i]){
-      html += `<div class="cat-title" style="background:${i===0?'var(--amber)':'var(--green)'};">${legLabels[i]}</div>`;
+      html += `<div class="cat-title" style="background:${i===0?'var(--amber)':'var(--green)'};color:#fff;">${legLabels[i]}</div>`;
     }
 
     const grouped = {};
@@ -1294,7 +1328,7 @@ async function renderMasterItems(){
       <div class="group-title">${kategori}</div>
       ${grouped[kategori].map(it => `
         <div class="master-row">
-          <span style="flex:1;font-size:14px;">${it.nama_item}</span>
+          <input type="text" value="${it.nama_item}" onchange="updateChecklistItemName('${it.id}', this.value)">
           <div class="row-actions">
             <button class="toggle-chip active-no" onclick="deleteChecklistItem('${it.id}','${it.nama_item.replace(/'/g,"\\'")}','${kategori}')">Hapus</button>
           </div>
@@ -1302,6 +1336,16 @@ async function renderMasterItems(){
       `).join('')}
     </div>
   `).join('');
+}
+
+async function updateChecklistItemName(id, val){
+  const namaBaru = val.trim();
+  if(!namaBaru){ showToast('Nama item tidak boleh kosong.', true); await renderMasterItems(); return; }
+  const { error } = await sb.from('p2h_checklist_items').update({ nama_item: namaBaru }).eq('id', id);
+  if(error){ showToast('Gagal mengubah nama item: '+error.message, true); return; }
+  showToast('Nama item diperbarui.');
+  await loadChecklistItems();
+  buildChecklist();
 }
 
 function openModal(id){ document.getElementById(id).classList.add('show'); }
