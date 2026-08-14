@@ -673,6 +673,7 @@ async function loadOpenTrips(){
   const closedIds = new Set((pulangList || []).map(p => p.trip_ref_id));
   const open = (berangkatList || []).filter(b => !closedIds.has(b.id));
 
+  const hariNama = ["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"];
   const sel = document.getElementById('tripSelect');
   const now = Date.now();
   sel.innerHTML = '<option value="">Pilih trip</option>' + open.map(t => {
@@ -680,7 +681,8 @@ async function loadOpenTrips(){
     const driverName = state.drivers.find(x => x.id === t.driver_id)?.nama || '?';
     const hoursOpen = t.created_at ? (now - new Date(t.created_at).getTime()) / 3600000 : 0;
     const warn = hoursOpen >= 24 ? '⚠ ' : '';
-    return `<option value="${t.id}">${warn}${truckName} - ${driverName} (berangkat tgl ${t.tanggal}, KM ${Number(t.km).toLocaleString('id-ID')}) - ${t.tujuan||'-'}</option>`;
+    const hariStr = t.created_at ? `${hariNama[new Date(t.created_at).getDay()]} tgl ${t.tanggal}` : `tgl ${t.tanggal}`;
+    return `<option value="${t.id}">${warn}${truckName} - ${driverName} (berangkat ${hariStr}) - ${t.tujuan||'-'}</option>`;
   }).join('');
   state._openTripsCache = open;
 }
@@ -716,7 +718,9 @@ function loadTrip(){
   document.getElementById('tujuan').disabled = true;
   document.getElementById('tujuan').classList.add('readonly-field');
   const truckName = state.trucks.find(x => x.id === trip.truck_id)?.plat_nomor || '?';
-  tripInfo.innerHTML = `Trip ini berangkat tgl <b>${trip.tanggal}</b> dengan KM awal <b>${Number(trip.km).toLocaleString('id-ID')}</b>, tujuan <b>${trip.tujuan||'-'}</b>. Truck dan driver otomatis terkunci.`;
+  const hariNama = ["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"];
+  const hariStr = trip.created_at ? `${hariNama[new Date(trip.created_at).getDay()]} tgl ${trip.tanggal}` : `tgl ${trip.tanggal}`;
+  tripInfo.innerHTML = `Berangkat <b>${hariStr}</b>, tujuan <b>${trip.tujuan||'-'}</b>.`;
   tripInfo.classList.add('show');
   setFieldsLocked(true);
 }
