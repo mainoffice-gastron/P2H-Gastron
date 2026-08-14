@@ -136,11 +136,17 @@
   .btn-export-pdf{margin-top:10px;width:100%;padding:8px;font-size:12px;font-weight:600;border-radius:6px;border:1px solid var(--border-strong);background:#fff;color:var(--text-secondary);cursor:pointer;}
   .btn-export-pdf:hover{border-color:var(--red);color:var(--red-dark);}
   .form-open-trip-banner{background:var(--red-bg);border:1px solid #FCA5A5;color:var(--red-dark);border-radius:8px;padding:10px 12px;font-size:12px;margin:16px;}
+  .open-trip-title{font-weight:600;margin-bottom:6px;}
+  .open-trip-row{padding:2px 0;}
+  .open-trip-row.clickable-row{cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
+  .open-trip-row.clickable-row:hover{opacity:0.75;}
 
   /* Dashboard */
   .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem 1.25rem;margin:16px;}
   .stat-card p.label{font-size:13px;font-weight:600;margin:0 0 10px;}
   .truck-status-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid var(--border);}
+  .truck-status-row.clickable{cursor:pointer;}
+  .truck-status-row.clickable:hover{background:#F9FAFB;}
   .truck-status-row:last-child{border-bottom:none;}
   .bar-row{margin-bottom:10px;}
   .bar-row .bar-label{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;}
@@ -305,6 +311,9 @@
         <option value="kepulangan">Kepulangan</option>
       </select>
     </div>
+    <div class="filter-row">
+      <select id="filterBulan"><option value="">Semua bulan</option></select>
+    </div>
     <div id="riwayatList">
       <div class="loading-msg">Memuat riwayat...</div>
     </div>
@@ -460,15 +469,28 @@ async function checkOpenTripsWarning(){
   if(!warnEl) return;
   if(open.length === 0){ warnEl.innerHTML = ''; return; }
 
+  const hariNama = ["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"];
+  const bulanNamaFull = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+
   const now = Date.now();
-  const items = open.map(b => {
+  const itemsHtml = open.map(b => {
     const truckName = state.trucks.find(t => t.id === b.truck_id)?.plat_nomor || '?';
     const hoursOpen = b.created_at ? (now - new Date(b.created_at).getTime()) / 3600000 : 0;
     const isStale = hoursOpen >= 24;
-    return `${isStale ? '⚠ ' : ''}<b>${truckName}</b>${b.tujuan ? ' — '+b.tujuan : ''}`;
-  }).join(', ');
+    let tanggalStr = '';
+    if(b.created_at){
+      const d = new Date(b.created_at);
+      tanggalStr = ` (hari ${hariNama[d.getDay()]}, ${d.getDate()} ${bulanNamaFull[d.getMonth()]} ${d.getFullYear()})`;
+    }
+    return `<div class="open-trip-row clickable-row" onclick="goToKepulangan('${b.id}')">${isStale ? '⚠ ' : '•'} <b>${truckName}</b>${b.tujuan ? ' — '+b.tujuan : ''}${tanggalStr} →</div>`;
+  }).join('');
 
-  warnEl.innerHTML = `<div class="form-open-trip-banner">🚚 Truck yang belum diisi kepulangannya: ${items}. Jangan lupa lengkapi form kepulangan.</div>`;
+  warnEl.innerHTML = `
+    <div class="form-open-trip-banner">
+      <div class="open-trip-title">🚚 Truck yang belum diisi kepulangannya</div>
+      ${itemsHtml}
+    </div>
+  `;
 }
 
 const KOORDINATOR_NAME = "Rachmat Mauly";
@@ -661,6 +683,20 @@ async function loadOpenTrips(){
     return `<option value="${t.id}">${warn}${truckName} - ${driverName} (berangkat tgl ${t.tanggal}, KM ${Number(t.km).toLocaleString('id-ID')}) - ${t.tujuan||'-'}</option>`;
   }).join('');
   state._openTripsCache = open;
+}
+
+async function goToKepulangan(tripId){
+  showPage('form');
+  setMode('pulang');
+  await loadOpenTrips();
+  const sel = document.getElementById('tripSelect');
+  if(sel.querySelector(`option[value="${tripId}"]`)){
+    sel.value = tripId;
+    loadTrip();
+    showToast('Trip dipilih, silakan lengkapi checklist kepulangan.');
+  } else {
+    showToast('Trip tidak ditemukan di daftar terbuka.', true);
+  }
 }
 
 function loadTrip(){
@@ -877,9 +913,10 @@ function resetForm(){
 async function loadRiwayat(){
   const truckFilter = document.getElementById('filterTruck').value;
   const tipeFilter = document.getElementById('filterTipe').value;
+  const bulanFilter = document.getElementById('filterBulan').value; // format "YYYY-MM"
 
   // ambil semua submission (ga difilter tipe dulu di query, biar tetap bisa pairing keberangkatan+kepulangan)
-  let query = sb.from('p2h_submissions').select('*').order('created_at', { ascending: false }).limit(100);
+  let query = sb.from('p2h_submissions').select('*').order('created_at', { ascending: false }).limit(200);
   if(truckFilter) query = query.eq('truck_id', truckFilter);
   const { data, error } = await query;
 
@@ -900,14 +937,40 @@ async function loadRiwayat(){
   }
   const allBerangkat = [...berangkatList, ...extraBerangkat];
 
-  // apply filter tipe di level trip (bukan submission)
+  // populate dropdown bulan dari seluruh data keberangkatan yang ada
+  const bulanNamaFull = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+  const bulanSet = new Set();
+  allBerangkat.forEach(b => {
+    if(b.created_at){
+      const d = new Date(b.created_at);
+      bulanSet.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+    }
+  });
+  const bulanOptions = Array.from(bulanSet).sort().reverse();
+  const filterBulanSel = document.getElementById('filterBulan');
+  const currentBulanVal = filterBulanSel.value;
+  filterBulanSel.innerHTML = '<option value="">Semua bulan</option>' + bulanOptions.map(bm => {
+    const [y, m] = bm.split('-');
+    return `<option value="${bm}">${bulanNamaFull[Number(m)-1]} ${y}</option>`;
+  }).join('');
+  filterBulanSel.value = currentBulanVal;
+
+  // apply filter tipe & bulan di level trip (bukan submission)
   let trips = allBerangkat.map(b => ({ berangkat: b, pulang: pulangByRef[b.id] || null }));
   if(tipeFilter === 'keberangkatan') trips = trips.filter(t => !t.pulang);
   if(tipeFilter === 'kepulangan') trips = trips.filter(t => t.pulang);
+  if(bulanFilter){
+    trips = trips.filter(t => {
+      if(!t.berangkat.created_at) return false;
+      const d = new Date(t.berangkat.created_at);
+      const bm = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      return bm === bulanFilter;
+    });
+  }
 
   trips.sort((a,b) => new Date(b.berangkat.created_at) - new Date(a.berangkat.created_at));
 
-  if(trips.length === 0){ list.innerHTML = `<div class="empty-state">Belum ada riwayat trip.</div>`; return; }
+  if(trips.length === 0){ list.innerHTML = `<div class="empty-state">Belum ada riwayat trip untuk filter ini.</div>`; return; }
 
   list.innerHTML = trips.map(trip => {
     const b = trip.berangkat;
@@ -1056,7 +1119,8 @@ async function exportTripPdf(submissionIds){
   doc.setTextColor(150);
   doc.text(`Dicetak pada ${new Date().toLocaleString('id-ID')}`, 14, 290);
 
-  doc.save(`P2H-${truckName.replace(/\s+/g,'')}-${Date.now()}.pdf`);
+  const todayStr = `${String(new Date().getDate()).padStart(2,'0')}-${String(new Date().getMonth()+1).padStart(2,'0')}-${new Date().getFullYear()}`;
+  doc.save(`P2H-${truckName.replace(/\s+/g,'')}-${todayStr}.pdf`);
   showToast('PDF berhasil dibuat.');
 }
 
@@ -1125,6 +1189,7 @@ async function toggleTripDetail(submissionIds, cardEl){
 }
 document.getElementById('filterTruck')?.addEventListener('change', loadRiwayat);
 document.getElementById('filterTipe')?.addEventListener('change', loadRiwayat);
+document.getElementById('filterBulan')?.addEventListener('change', loadRiwayat);
 
 /* ---------- DASHBOARD ---------- */
 async function loadDashboard(){
@@ -1148,10 +1213,10 @@ async function loadDashboard(){
       if(isStale) staleTrucks.push(t.plat_nomor);
     }
     return `
-      <div class="truck-status-row">
+      <div class="truck-status-row${open ? ' clickable' : ''}" ${open ? `onclick="goToKepulangan('${open.id}')"` : ''}>
         <span style="font-size:13px;">${t.plat_nomor}</span>
         ${open
-          ? `<span class="badge ${isStale ? 'stale' : 'open'}">${isStale ? 'Belum ditutup >24 jam' : 'Sedang trip'} - ${open.tujuan || '-'}</span>`
+          ? `<span class="badge ${isStale ? 'stale' : 'open'}">${isStale ? 'Belum ditutup >24 jam' : 'Sedang trip'} - ${open.tujuan || '-'} →</span>`
           : `<span class="badge closed">Standby</span>`}
       </div>
     `;
