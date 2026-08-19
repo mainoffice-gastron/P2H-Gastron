@@ -109,6 +109,8 @@
   .filter-row select{flex:1;padding:9px 10px;border:1px solid var(--border-strong);border-radius:6px;font-size:13px;background:#fff;color:var(--text);}
   .filter-row select:focus{outline:none;border-color:var(--red);}
   .trip-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin:0 16px 10px;padding:12px 14px;cursor:pointer;}
+  .trip-item.has-urgent{border-left:3px solid var(--red);}
+  .trip-urgent-row{font-size:12px;color:var(--red-dark);font-weight:500;margin-top:6px;}
   .trip-item-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
   .trip-item-top b{font-size:14px;}
   .badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;}
@@ -976,12 +978,31 @@ async function loadRiwayat(){
 
   if(trips.length === 0){ list.innerHTML = `<div class="empty-state">Belum ada riwayat trip untuk filter ini.</div>`; return; }
 
+  // ambil semua item bermasalah (perlu diganti / tidak layak) buat submission yang ditampilkan
+  const allSubIds = trips.flatMap(t => t.pulang ? [t.berangkat.id, t.pulang.id] : [t.berangkat.id]);
+  const problemBySubId = {};
+  if(allSubIds.length){
+    const { data: problemItems } = await sb.from('p2h_submission_items').select('submission_id, nama_item').or('status.eq.ganti,hasil.eq.tidak').in('submission_id', allSubIds);
+    (problemItems || []).forEach(it => {
+      if(!problemBySubId[it.submission_id]) problemBySubId[it.submission_id] = [];
+      problemBySubId[it.submission_id].push(it.nama_item);
+    });
+  }
+
   list.innerHTML = trips.map(trip => {
     const b = trip.berangkat;
     const p = trip.pulang;
     const truckName = state.trucks.find(x => x.id === b.truck_id)?.plat_nomor || '?';
     const driverBerangkat = state.drivers.find(x => x.id === b.driver_id)?.nama || '?';
     const statusBadge = p ? `<span class="badge closed">Selesai</span>` : `<span class="badge open">Masih jalan</span>`;
+
+    const problemItems = [...(problemBySubId[b.id] || []), ...(p ? (problemBySubId[p.id] || []) : [])];
+    let urgentRow = '';
+    if(problemItems.length === 1){
+      urgentRow = `<div class="trip-urgent-row">⚠ 1 item perlu diperhatikan — ${problemItems[0]}</div>`;
+    } else if(problemItems.length > 1){
+      urgentRow = `<div class="trip-urgent-row">⚠ ${problemItems.length} item perlu diperhatikan — tap untuk lihat detail</div>`;
+    }
 
     let pulangRow = '';
     if(p){
@@ -996,7 +1017,7 @@ async function loadRiwayat(){
     }
 
     return `
-      <div class="trip-item" onclick="toggleTripDetail('${b.id}${p ? ','+p.id : ''}', this)">
+      <div class="trip-item${problemItems.length ? ' has-urgent' : ''}" onclick="toggleTripDetail('${b.id}${p ? ','+p.id : ''}', this)">
         <div class="trip-item-top">
           <b>${truckName} - ${driverBerangkat}</b>
           ${statusBadge}
@@ -1006,6 +1027,7 @@ async function loadRiwayat(){
           <span class="trip-leg-text">${formatTanggalLengkap(b.tanggal, b.created_at)}, ${formatJam(b.created_at)} · KM ${Number(b.km).toLocaleString('id-ID')} · ${b.tujuan || '-'}${b.koordinator ? ' · Koor: '+b.koordinator : ''}</span>
         </div>
         ${pulangRow}
+        ${urgentRow}
         <button class="btn-export-pdf" onclick="event.stopPropagation(); exportTripPdf('${b.id}${p ? ','+p.id : ''}')">⬇ Download Laporan</button>
         <div class="trip-detail" id="detail-${b.id}"></div>
       </div>
