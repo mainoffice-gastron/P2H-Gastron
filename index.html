@@ -1050,7 +1050,23 @@ async function exportTripPdf(submissionIds){
   drawHeader();
   y = 32;
 
-  legs.forEach((leg, idx) => {
+  async function imageUrlToDataUrl(url){
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch(e){
+      return null;
+    }
+  }
+
+  for(let idx = 0; idx < legs.length; idx++){
+    const leg = legs[idx];
     if(idx > 0){ doc.addPage(); drawHeader(); y = 32; }
 
     const s = leg.sub;
@@ -1117,7 +1133,43 @@ async function exportTripPdf(submissionIds){
       }
     });
     y = doc.lastAutoTable.finalY + 8;
-  });
+
+    // ---- embed foto (kondisi + bensin) ----
+    const s2 = leg.sub;
+    const allPhotoUrls = [...(s2.foto_urls || []), ...(s2.bensin_foto_url ? [s2.bensin_foto_url] : [])];
+    if(allPhotoUrls.length){
+      if(y > 240){ doc.addPage(); drawHeader(); y = 32; }
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(0,0,0);
+      doc.text('Foto lampiran', 14, y);
+      y += 5;
+
+      const thumbSize = 42;
+      const gap = 4;
+      const perRow = Math.floor((pageWidth - 28 + gap) / (thumbSize + gap));
+      let col = 0;
+
+      for(const url of allPhotoUrls){
+        const dataUrl = await imageUrlToDataUrl(url);
+        if(!dataUrl) continue;
+
+        if(y + thumbSize > 275){ doc.addPage(); drawHeader(); y = 32; col = 0; }
+
+        const x = 14 + col * (thumbSize + gap);
+        try {
+          doc.addImage(dataUrl, 'JPEG', x, y, thumbSize, thumbSize);
+        } catch(e){
+          try { doc.addImage(dataUrl, 'PNG', x, y, thumbSize, thumbSize); } catch(e2){}
+        }
+
+        col++;
+        if(col >= perRow){ col = 0; y += thumbSize + gap; }
+      }
+      if(col !== 0) y += thumbSize + gap;
+      y += 4;
+    }
+  }
 
   doc.setFontSize(8);
   doc.setTextColor(150);
